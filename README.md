@@ -3,8 +3,14 @@
 Japanese: [README.ja.md](README.ja.md)
 
 <p align="center">
-  <img src="assets/images/dualkey.jpg" width="700" alt="M5DUALKEY-DeskCon-RGB-ToF">
+  <img src="assets/images/deskconsole-front.jpg" width="700" alt="Front view of the complete M5DUALKEY DeskConsole with DualKey, Encoder, Angle, RGB, and ToF modules">
 </p>
+<p align="center"><em>Complete five-module DeskConsole</em></p>
+
+<p align="center">
+  <img src="assets/images/deskconsole-lego-mount.jpg" width="700" alt="Underside view of the M5DUALKEY DeskConsole showing the LEGO Technic mounting structure">
+</p>
+<p align="center"><em>Underside view showing the LEGO Technic mounting structure</em></p>
 
 M5DUALKEY-DeskCon-RGB-ToF is a compact USB HID controller for macOS, built from M5Stack Chain DualKey, Encoder, Angle, RGB, and ToF modules.
 

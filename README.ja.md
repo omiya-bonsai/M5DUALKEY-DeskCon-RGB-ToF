@@ -3,8 +3,14 @@
 English: [README.md](README.md)
 
 <p align="center">
-  <img src="assets/images/dualkey.jpg" width="700" alt="M5DUALKEY-DeskCon-RGB-ToF">
+  <img src="assets/images/deskconsole-front.jpg" width="700" alt="DualKey、Encoder、Angle、RGB、ToFを接続したM5DUALKEY DeskConsoleの正面外観">
 </p>
+<p align="center"><em>5モジュール構成のDeskConsole全景</em></p>
+
+<p align="center">
+  <img src="assets/images/deskconsole-lego-mount.jpg" width="700" alt="M5DUALKEY DeskConsoleを裏返し、レゴテクニックによる固定構造を見せた外観">
+</p>
+<p align="center"><em>レゴテクニックによる固定構造を見せた裏面</em></p>
 
 M5DUALKEY-DeskCon-RGB-ToFは、M5Stack Chain DualKey、Encoder、Angle、RGB、ToFで構成したmacOS向けのコンパクトなUSB HIDコントローラーです。
 
