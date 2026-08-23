@@ -2,7 +2,7 @@
 
 Japanese: [controls.ja.md](controls.ja.md)
 
-The orientation with the USB-C port on the rear side is treated as the front. From this front view, the physical layout from left to right is DualKey, Encoder, then Angle. All left/right controls and LED positions below are described from this viewing direction.
+The orientation with the USB-C port on the rear side is treated as the front. From this front view, the physical layout from left to right is DualKey, Encoder, Angle, Chain RGB, then Chain ToF. All left/right controls and LED positions below are described from this viewing direction.
 
 ## DualKey
 
@@ -40,6 +40,12 @@ The Angle center is calibrated during startup. Hysteresis uses separate start an
 
 Keep the Angle physically centered while the controller starts.
 
+## ToF and RGB Matrix
+
+Chain ToF runs in SINGLE mode with a 33 ms measurement time. Firmware waits for both `STOP` status and the completion flag, reads the distance, then explicitly starts the next SINGLE measurement. A failed START is retried at a bounded interval; CONTINUOUS mode is not used.
+
+A valid, fresh distance drives the illuminated Chain RGB output. At 400 mm or farther the Matrix is off. Moving toward 50 mm produces a centered square that grows from 2 x 2 to 8 x 8 and becomes brighter. Distance is smoothed with 75% of the previous value and 25% of the new value. If no successful distance is received for 500 ms, the value becomes invalid and the Matrix turns off.
+
 ## LED Status
 
 | Internal state | LED display |
@@ -54,7 +60,7 @@ Keep the Angle physically centered while the controller starts.
 
 The selected output and mute LEDs use a 1/f-like breathing animation with fixed hues. The Angle LED does not breathe: it responds directly to the normalized operation amount and fades out over approximately 150 ms after returning to center and stopping.
 
-At startup, the LEDs run in this order: left DualKey red, right DualKey yellow, Encoder purple, and Angle blue. All four then light together near maximum brightness for approximately 250 ms as the READY indication and fade out together while preserving their four colors.
+At startup, the LEDs run in this order: left DualKey red, right DualKey yellow, Encoder purple, Angle blue, then Chain RGB. They then light together for approximately 250 ms as the READY indication and fade out while preserving their colors. The Chain ToF LED does not participate in this sequence.
 
 At startup, audio output is explicitly `UNKNOWN`; no output is assumed and both DualKey LEDs remain off. A direct left or right selection establishes the internal output state. A both-key toggle reverses a known internal state. If the first audio action after startup is the toggle shortcut, the result cannot be inferred, so the state remains unknown and both LEDs stay off until a direct selection.
 

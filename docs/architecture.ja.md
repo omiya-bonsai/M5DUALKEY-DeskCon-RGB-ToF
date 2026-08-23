@@ -4,20 +4,20 @@ English: [architecture.md](architecture.md)
 
 ## システム全体構成
 
-本プロジェクトでは、USB-Cポートが背面に来る向きを正面として扱います。正面から見た正式な物理配置は、左からESP32-S3搭載のChain DualKey、Encoder、Angleです。3モジュールをM5Chain UARTデイジーチェーンで接続しています。
+本プロジェクトでは、USB-Cポートが背面に来る向きを正面として扱います。正面から見た固定の物理配置は、左からESP32-S3搭載のChain DualKey、Encoder、Angle、Chain RGB、Chain ToFです。4台の周辺モジュールをDualKey右側ポート（`RX=GPIO5`、`TX=GPIO6`）のM5Chain UARTデイジーチェーンで接続しています。
 
 ```text
 正面図（USB-Cは背面側）
 
-+-----------+-----------+-----------+
-| DualKey   | Encoder   | Angle     |
-+-----------+-----------+-----------+
++-----------+-----------+-----------+-----------+-----------+
+| DualKey   | Encoder   | Angle     | RGB       | ToF       |
++-----------+-----------+-----------+-----------+-----------+
 
-DualKey (ESP32-S3) -> Encoder -> Angle
-          M5Chain UARTデイジーチェーン
+DualKey (ESP32-S3) -> Encoder -> Angle -> RGB -> ToF
+                  M5Chain UARTデイジーチェーン
 ```
 
-ファームウェアはChain IDを固定せず、デバイスタイプからEncoderとAngleを探索します。DualKeyのボタンはESP32-S3で直接読み取ります。Encoderの回転とボタンはUSB HID Consumer Control、AngleはUSB HIDマウスホイールとして送信します。
+ファームウェアはChain IDを固定せず、デバイスタイプから必要な周辺モジュールを探索します。デバイス数とリストを正常に取得し、Encoder、Angle、RGB、ToFをすべて発見できた場合にChain列挙成功とします。追加デバイスが列挙されても取得済みIDは無効化しません。その後のデバイス固有設定が失敗した場合も、ログを残して無関係なデバイスIDを維持します。DualKeyのボタンはESP32-S3で直接読み取ります。Encoderの回転とボタンはUSB HID Consumer Control、AngleはUSB HIDマウスホイールとして送信します。
 
 3つのHID経路は、それぞれ次の責務を持ちます。
 
@@ -45,11 +45,27 @@ M5DUALKEY-DeskCon-RGB-ToF
 
 Raycastを使用するのはDualKeyのキーボードショートカットだけです。ESP32側はORA4やStudio Displayを直接操作せず、実際の切り替えはRaycastとmacOS側に登録したスクリプトが行います。Encoderの音量／ミュートとAngleのマウスホイールは、Raycastを経由せずUSB HIDからmacOSへ直接送信されます。
 
+センサーから表示までの経路は、これらのHID経路から独立しています。
+
+```text
+ToF SINGLE START
+      |
+      v
+STOP + COMPLETE -> 距離 -> 75/25平滑化 -> 有効性・鮮度確認
+                                                |
+                                                v
+                                  RGB Matrix中央のSquare表示
+```
+
+ToFは33 msのSINGLE測距を使用し、完了した距離を読むたびに次の測距を明示的にSTARTします。距離が無効または古くなった場合はMatrixを消灯します。ToF本体のLEDは起動演出へ参加しません。
+
 ## 責務分離
 
 - **入力処理:** DualKeyとEncoderのデバウンス、DualKey同時押し判定、Angle位置の解釈
 - **HID出力:** DualKeyのキーボードショートカットはRaycastへ、Consumer ControlとマウスホイールはmacOSへ直接送信
 - **Angle制御:** 起動時の中央キャリブレーション、ヒステリシス、スクロール間隔の計算
+- **Chain検証:** Encoder、Angle、RGB、ToFの型が存在することを検証し、以後の設定失敗を該当デバイスへ分離
+- **距離表示:** ToF SINGLEを制限周期で処理し、有効な距離を平滑化してRGB Matrixを制限周期で更新
 - **LED状態:** DualKeyから最後に選択した出力とローカルのミュート状態を保持し、専用のLED更新関数で表示
 - **macOS自動化:** DualKeyの3つのオーディオ出力ショートカットだけをファームウェア外のスクリプトへ割り当て
 
