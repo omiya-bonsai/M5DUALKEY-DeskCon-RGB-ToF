@@ -8,15 +8,16 @@ Japanese: [README.ja.md](README.ja.md)
 
 M5DUALKEY-DeskCon-RGB-ToF is a compact USB HID controller for macOS, built from M5Stack Chain DualKey, Encoder, Angle, RGB, and ToF modules.
 
-It sends standard keyboard, consumer-control, and mouse-wheel events. Audio-output switching is delegated to Raycast (or another macOS automation tool), keeping operating-system-specific work outside the firmware.
+It sends standard keyboard, consumer-control, and mouse-wheel events. DualKey audio-output selection and its custom chord are delegated to Raycast (or another macOS automation tool), keeping operating-system-specific work outside the firmware.
 
 ## Features
 
-- One-touch audio-output selection and toggle shortcuts
+- One-touch audio-output selection plus a separate custom two-key shortcut
 - Hardware volume and mute control
 - Spring-centered auto-scroll with startup calibration and hysteresis
 - Low-brightness RGB status indicators for audio output and mute
-- ToF-responsive 8 x 8 RGB Matrix visualization
+- Continuously measured ToF proximity shaping the low-brightness ambient light, with no ToF HID output
+- Low-brightness 8 x 8 ambient animation and action-specific RGB feedback
 - Automatic discovery and validation of the four Chain modules
 
 ## Hardware
@@ -44,13 +45,13 @@ Front view (USB-C on rear side)
 | --- | --- | --- |
 | DualKey | Left | Select ORA4 (`Ctrl + Cmd + 1`), red LED |
 | DualKey | Right | Select Studio Display (`Ctrl + Cmd + 2`), yellow LED |
-| DualKey | Both | Toggle output (`Ctrl + Option + S`) |
+| DualKey | Both | Custom action (`Ctrl + Option + E`) |
 | Encoder | Turn / press | Volume Up, Volume Down, or Mute; purple LED while muted |
 | Angle | Left / center / right | Scroll Up, stop, or Scroll Down; blue activity LED |
-| Chain ToF | Hand distance | SINGLE measurements at 33 ms; each completed read explicitly starts the next measurement |
-| Chain RGB | Matrix display | Off at 400 mm or farther; a centered square grows and brightens toward 50 mm |
+| Chain ToF | Continuous distance | Gently shape Matrix ambient brightness, breathing, spread, and shimmer; no HID output |
+| Chain RGB | Matrix display | Proximity-aware ambient glow plus non-blocking feedback for DualKey, Encoder, and Angle actions |
 
-Only the three DualKey audio-output actions use Raycast. Encoder volume/mute and Angle scrolling are sent directly to macOS as USB HID events.
+DualKey keyboard shortcuts use Raycast. Encoder volume/mute and Angle scrolling are sent directly to macOS as USB HID events. ToF never sends USB HID events.
 
 The LEDs represent firmware-maintained state, not state read back from macOS. See [Controls](docs/controls.md) for startup behavior and limitations.
 
@@ -63,7 +64,7 @@ The LEDs represent firmware-maintained state, not state read back from macOS. Se
 
 ## Project Status
 
-USB HID keyboard, consumer control, Angle auto-scroll, startup calibration, RGB status indicators, ToF SINGLE measurements, and the distance-responsive RGB Matrix are implemented. BLE HID is planned.
+USB HID keyboard, consumer control, Angle auto-scroll, startup calibration, continuous ToF SINGLE proximity input, RGB status indicators, and non-blocking Matrix animations are implemented. Matrix master brightness is hard-limited to 50%, and full-buffer transfers are limited to 12.5 fps. BLE HID is planned.
 
 ## License
 

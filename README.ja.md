@@ -8,15 +8,16 @@ English: [README.md](README.md)
 
 M5DUALKEY-DeskCon-RGB-ToFは、M5Stack Chain DualKey、Encoder、Angle、RGB、ToFで構成したmacOS向けのコンパクトなUSB HIDコントローラーです。
 
-標準のキーボード、Consumer Control、マウスホイールイベントを送信します。オーディオ出力の切り替えはRaycast（または他のmacOS自動化ツール）へ委譲し、OS固有処理をファームウェアから分離しています。
+標準のキーボード、Consumer Control、マウスホイールイベントを送信します。DualKeyによるオーディオ出力選択と同時押しのカスタム操作はRaycast（または他のmacOS自動化ツール）へ委譲し、OS固有処理をファームウェアから分離しています。
 
 ## 主な特徴
 
-- オーディオ出力の選択・トグル用ショートカット
+- オーディオ出力の直接選択と、独立した同時押しカスタムショートカット
 - ハードウェアによる音量・ミュート操作
 - 起動時キャリブレーションとヒステリシスを備えたオートスクロール
 - オーディオ出力とミュートを示す控えめなRGB状態表示
-- ToF距離に反応する8 x 8 RGB Matrix表示
+- ToFの連続距離で低輝度ambientを穏やかに変化させ、ToFからはHIDを送信しない設計
+- 低輝度の8 x 8 ambient animationと操作別RGB feedback
 - 4台のChainモジュールの自動探索と構成検証
 
 ## ハードウェア構成
@@ -44,13 +45,13 @@ M5DUALKEY-DeskCon-RGB-ToFは、M5Stack Chain DualKey、Encoder、Angle、RGB、T
 | --- | --- | --- |
 | DualKey | 左 | ORA4を選択（`Ctrl + Cmd + 1`）、LEDは赤 |
 | DualKey | 右 | Studio Displayを選択（`Ctrl + Cmd + 2`）、LEDは黄 |
-| DualKey | 左右同時 | 出力をトグル（`Ctrl + Option + S`） |
+| DualKey | 左右同時 | カスタム操作（`Ctrl + Option + E`） |
 | Encoder | 回転／押し込み | 音量アップ、音量ダウン、ミュート。Mute中は紫 |
 | Angle | 左／中央／右 | 上スクロール、停止、下スクロール。操作中は青 |
-| Chain ToF | 手との距離 | 33 msのSINGLE測距。完了値を読むたびに次の測距を明示的にSTART |
-| Chain RGB | Matrix表示 | 400 mm以上で消灯し、50 mmへ近づくほど中央のSquareが拡大・高輝度化 |
+| Chain ToF | 連続距離 | Matrix ambientの明るさ、呼吸、広がり、揺らぎを穏やかに変化。HID出力なし |
+| Chain RGB | Matrix表示 | 距離に反応するambient glowとDualKey／Encoder／Angle操作のnon-blocking feedback |
 
-Raycastを使用するのはDualKeyの3つのオーディオ出力操作だけです。Encoderの音量／ミュートとAngleのスクロールは、USB HIDイベントとしてmacOSへ直接送信されます。
+DualKeyのキーボードショートカットはRaycastを使用します。Encoderの音量／ミュートとAngleのスクロールは、USB HIDイベントとしてmacOSへ直接送信されます。ToFからUSB HIDイベントは送信しません。
 
 LEDはmacOSから取得した実状態ではなく、ファームウェア内の状態を表示します。起動時の挙動と制約は[操作とLED表示](docs/controls.ja.md)を参照してください。
 
@@ -63,7 +64,7 @@ LEDはmacOSから取得した実状態ではなく、ファームウェア内の
 
 ## Project Status
 
-USB HID Keyboard、Consumer Control、Angleオートスクロール、起動時キャリブレーション、RGB状態表示、ToF SINGLE測距、距離連動RGB Matrixを実装済みです。BLE HIDは今後実装予定です。
+USB HID Keyboard、Consumer Control、Angleオートスクロール、起動時キャリブレーション、ToF SINGLEによる連続proximity入力、RGB状態表示、non-blocking Matrix animationを実装済みです。Matrixのmaster brightnessは50%を絶対上限とし、全buffer転送は最大12.5 fpsに制限しています。BLE HIDは今後実装予定です。
 
 ## ライセンス
 

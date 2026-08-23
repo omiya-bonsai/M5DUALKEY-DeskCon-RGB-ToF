@@ -107,10 +107,14 @@ constexpr uint8_t ANGLE_R = 40;
 constexpr uint8_t ANGLE_G = 140;
 constexpr uint8_t ANGLE_B = 255;
 
-// RGB Matrix = turquoise
+// RGB Matrix feedback colors
 constexpr uint8_t MATRIX_R = 30;
 constexpr uint8_t MATRIX_G = 220;
 constexpr uint8_t MATRIX_B = 180;
+
+constexpr uint8_t MATRIX_WHITE_R = 220;
+constexpr uint8_t MATRIX_WHITE_G = 235;
+constexpr uint8_t MATRIX_WHITE_B = 255;
 
 // ============================================================
 // LED brightness
@@ -120,8 +124,16 @@ constexpr uint8_t MATRIX_B = 180;
 // M5Chain LED brightness uses 0-100.
 constexpr uint8_t CHAIN_LED_BRIGHTNESS = 100;
 
-// Matrix hardware brightness.
-constexpr uint8_t MATRIX_MASTER_BRIGHTNESS = 20;
+// Chain RGB safety limit. The Matrix hardware/master brightness
+// must never exceed 50%. Per-frame RGB values apply a second,
+// lower brightness limit for idle and action rendering.
+constexpr uint8_t RGB_MATRIX_MAX_BRIGHTNESS = 50;
+constexpr uint8_t MATRIX_MASTER_BRIGHTNESS = 50;
+
+static_assert(
+    MATRIX_MASTER_BRIGHTNESS <=
+        RGB_MATRIX_MAX_BRIGHTNESS,
+    "Chain RGB brightness must not exceed 50%");
 
 constexpr float STANDBY_LEVEL = 0.20f;
 
@@ -267,17 +279,75 @@ constexpr uint32_t TOF_INVALID_TIMEOUT_MS = 500;
 constexpr uint8_t MATRIX_WIDTH = 8;
 constexpr uint8_t MATRIX_PIXELS = 64;
 
-constexpr uint16_t TOF_NEAR_MM = 50;
-constexpr uint16_t TOF_FAR_MM  = 400;
-
 // Limit large RGB buffer transfers.
 constexpr uint32_t MATRIX_UPDATE_INTERVAL_MS = 80;
+
+constexpr float MATRIX_AMBIENT_MIN_LEVEL = 0.05f;
+constexpr float MATRIX_AMBIENT_MAX_LEVEL = 0.12f;
+constexpr float MATRIX_ACTION_LEVEL = 0.30f;
+constexpr float MATRIX_ACTION_PEAK_LEVEL = 0.50f;
+
+// Valid, smoothed ToF distance gently shapes the ambient
+// animation. It never starts an action or emits HID input.
+constexpr uint16_t TOF_AMBIENT_NEAR_MM = 100;
+constexpr uint16_t TOF_AMBIENT_FAR_MM = 500;
+constexpr uint8_t TOF_AMBIENT_PROXIMITY_STEPS = 16;
+constexpr float TOF_AMBIENT_PROXIMITY_SMOOTHING = 0.16f;
+constexpr float TOF_AMBIENT_SPEED_BOOST = 0.60f;
+constexpr float TOF_AMBIENT_BRIGHTNESS_BOOST = 0.08f;
+constexpr float TOF_AMBIENT_SPREAD_BOOST = 0.35f;
+constexpr float TOF_AMBIENT_SHIMMER_MAX = 0.12f;
+
+static_assert(
+    MATRIX_ACTION_PEAK_LEVEL <= 0.50f,
+    "Chain RGB pixel level must not exceed 50%");
+
+static_assert(
+    TOF_AMBIENT_FAR_MM >
+        TOF_AMBIENT_NEAR_MM,
+    "ToF ambient distance range must be positive");
+
+static_assert(
+    (MATRIX_AMBIENT_MAX_LEVEL +
+     TOF_AMBIENT_BRIGHTNESS_BOOST) *
+            (1.0f +
+             TOF_AMBIENT_SHIMMER_MAX) <=
+        0.50f,
+    "ToF ambient pixel level must not exceed 50%");
+
+enum class MatrixAnimation
+{
+  IDLE,
+  ORA4_RIPPLE,
+  STUDIO_RIPPLE,
+  CHORD_FLASH,
+  VOLUME_EXPAND,
+  VOLUME_CONTRACT,
+  MUTE_PULSE,
+  SCROLL_UP,
+  SCROLL_DOWN
+};
+
+MatrixAnimation matrixAnimation =
+    MatrixAnimation::IDLE;
+
+uint32_t matrixAnimationStarted = 0;
+uint32_t matrixAnimationDuration = 0;
 
 uint32_t lastMatrixUpdate = 0;
 
 uint16_t previousMatrix[MATRIX_PIXELS] = {0};
 
 bool matrixInitialized = false;
+
+float matrixProximity = 0.0f;
+float matrixAmbientTime = 0.0f;
+
+uint32_t lastMatrixAmbientUpdate = 0;
+
+void startMatrixAnimation(
+    MatrixAnimation animation,
+    uint32_t now);
 
 // ============================================================
 // LED update
@@ -457,11 +527,11 @@ void sendStudioDisplay()
   Keyboard.releaseAll();
 }
 
-void sendAudioToggle()
+void sendDualKeyChord()
 {
   Keyboard.press(KEY_LEFT_CTRL);
   Keyboard.press(KEY_LEFT_ALT);
-  Keyboard.press('s');
+  Keyboard.press('e');
 
   delay(15);
 
@@ -994,17 +1064,22 @@ void bootLedTest()
 
   op = 0;
 
-  M5Chain.setRGBBufferRefresh(
-      rgb_id,
-      buffer,
-      &op);
+  const chain_status_t clearStatus =
+      M5Chain.setRGBBufferRefresh(
+          rgb_id,
+          buffer,
+          &op);
 
-  memcpy(
-      previousMatrix,
-      buffer,
-      sizeof(buffer));
+  if (clearStatus == CHAIN_OK &&
+      op)
+  {
+    memcpy(
+        previousMatrix,
+        buffer,
+        sizeof(buffer));
 
-  matrixInitialized = true;
+    matrixInitialized = true;
+  }
 }
 
 // ============================================================
@@ -1052,21 +1127,11 @@ void updateDualKey()
       pendingKey =
           PendingKey::NONE;
 
-      sendAudioToggle();
+      sendDualKeyChord();
 
-      if (currentAudioOutput ==
-          AudioOutput::ORA4)
-      {
-        currentAudioOutput =
-            AudioOutput::STUDIO_DISPLAY;
-      }
-      else if (
-          currentAudioOutput ==
-          AudioOutput::STUDIO_DISPLAY)
-      {
-        currentAudioOutput =
-            AudioOutput::ORA4;
-      }
+      startMatrixAnimation(
+          MatrixAnimation::CHORD_FLASH,
+          now);
 
       chordConsumed = true;
       singleConsumed = false;
@@ -1133,6 +1198,10 @@ void updateDualKey()
       currentAudioOutput =
           AudioOutput::ORA4;
 
+      startMatrixAnimation(
+          MatrixAnimation::ORA4_RIPPLE,
+          now);
+
       singleConsumed =
           true;
     }
@@ -1145,6 +1214,10 @@ void updateDualKey()
 
       currentAudioOutput =
           AudioOutput::STUDIO_DISPLAY;
+
+      startMatrixAnimation(
+          MatrixAnimation::STUDIO_RIPPLE,
+          now);
 
       singleConsumed =
           true;
@@ -1164,6 +1237,10 @@ void updateDualKey()
     currentAudioOutput =
         AudioOutput::ORA4;
 
+    startMatrixAnimation(
+        MatrixAnimation::ORA4_RIPPLE,
+        now);
+
     pendingKey =
         PendingKey::NONE;
 
@@ -1179,6 +1256,10 @@ void updateDualKey()
 
     currentAudioOutput =
         AudioOutput::STUDIO_DISPLAY;
+
+    startMatrixAnimation(
+        MatrixAnimation::STUDIO_RIPPLE,
+        now);
 
     pendingKey =
         PendingKey::NONE;
@@ -1263,6 +1344,12 @@ void updateEncoder()
 
           encoderLedFlashStarted =
               now;
+
+          startMatrixAnimation(
+              delta > 0
+                  ? MatrixAnimation::VOLUME_EXPAND
+                  : MatrixAnimation::VOLUME_CONTRACT,
+              now);
         }
       }
     }
@@ -1310,6 +1397,10 @@ void updateEncoder()
 
           muted =
               !muted;
+
+          startMatrixAnimation(
+              MatrixAnimation::MUTE_PULSE,
+              now);
         }
 
         lastEncoderButton =
@@ -1369,6 +1460,9 @@ void updateAngle()
   const int32_t startHigh =
       center +
       ANGLE_START_OFFSET;
+
+  const ScrollState previousScrollState =
+      scrollState;
 
   switch (scrollState)
   {
@@ -1436,6 +1530,26 @@ void updateAngle()
       }
 
       break;
+    }
+  }
+
+  if (scrollState !=
+      previousScrollState)
+  {
+    if (scrollState ==
+        ScrollState::UP)
+    {
+      startMatrixAnimation(
+          MatrixAnimation::SCROLL_UP,
+          now);
+    }
+    else if (
+        scrollState ==
+        ScrollState::DOWN)
+    {
+      startMatrixAnimation(
+          MatrixAnimation::SCROLL_DOWN,
+          now);
     }
   }
 
@@ -1539,6 +1653,14 @@ void updateTof()
   const uint32_t now =
       millis();
 
+  if (tofDistanceValid &&
+      now - lastTofSuccess >=
+          TOF_INVALID_TIMEOUT_MS)
+  {
+    tofDistanceValid =
+        false;
+  }
+
   if (now - lastTofPoll <
       TOF_POLL_INTERVAL_MS)
   {
@@ -1631,8 +1753,603 @@ void updateTof()
 }
 
 // ============================================================
-// Matrix from ToF
+// Matrix ambient and action animations
 // ============================================================
+
+uint32_t matrixAnimationDurationFor(
+    MatrixAnimation animation)
+{
+  switch (animation)
+  {
+    case MatrixAnimation::ORA4_RIPPLE:
+    case MatrixAnimation::STUDIO_RIPPLE:
+      return 560;
+
+    case MatrixAnimation::CHORD_FLASH:
+      return 500;
+
+    case MatrixAnimation::VOLUME_EXPAND:
+    case MatrixAnimation::VOLUME_CONTRACT:
+      return 320;
+
+    case MatrixAnimation::MUTE_PULSE:
+      return 480;
+
+    case MatrixAnimation::SCROLL_UP:
+    case MatrixAnimation::SCROLL_DOWN:
+      return 420;
+
+    case MatrixAnimation::IDLE:
+    default:
+      return 0;
+  }
+}
+
+void startMatrixAnimation(
+    MatrixAnimation animation,
+    uint32_t now)
+{
+  if (matrixAnimation ==
+          animation &&
+      matrixAnimationDuration != 0 &&
+      now - matrixAnimationStarted <
+          matrixAnimationDuration)
+  {
+    return;
+  }
+
+  matrixAnimation =
+      animation;
+
+  matrixAnimationStarted =
+      now;
+
+  matrixAnimationDuration =
+      matrixAnimationDurationFor(
+          animation);
+
+  // Allow the newest action to replace the previous frame
+  // at the next update without exceeding the 80 ms limit.
+  if (now - lastMatrixUpdate >=
+      MATRIX_UPDATE_INTERVAL_MS)
+  {
+    lastMatrixUpdate =
+        now -
+        MATRIX_UPDATE_INTERVAL_MS;
+  }
+}
+
+uint16_t matrixColor(
+    uint8_t baseR,
+    uint8_t baseG,
+    uint8_t baseB,
+    float level)
+{
+  const float limitedLevel =
+      clamp01(level);
+
+  return rgb565(
+      (uint8_t)(baseR * limitedLevel),
+      (uint8_t)(baseG * limitedLevel),
+      (uint8_t)(baseB * limitedLevel));
+}
+
+float matrixRadius(
+    uint8_t x,
+    uint8_t y,
+    float centerX,
+    float centerY)
+{
+  const float dx =
+      (float)x -
+      centerX;
+
+  const float dy =
+      (float)y -
+      centerY;
+
+  return sqrtf(
+      dx * dx +
+      dy * dy);
+}
+
+void updateMatrixAmbientState(
+    uint32_t now)
+{
+  float targetProximity = 0.0f;
+
+  if (tofDistanceValid)
+  {
+    if (tofDistance <=
+        TOF_AMBIENT_NEAR_MM)
+    {
+      targetProximity = 1.0f;
+    }
+    else if (tofDistance <
+             TOF_AMBIENT_FAR_MM)
+    {
+      targetProximity =
+          (float)(TOF_AMBIENT_FAR_MM -
+                  tofDistance) /
+          (float)(TOF_AMBIENT_FAR_MM -
+                  TOF_AMBIENT_NEAR_MM);
+    }
+  }
+
+  targetProximity =
+      roundf(
+          targetProximity *
+          TOF_AMBIENT_PROXIMITY_STEPS) /
+      TOF_AMBIENT_PROXIMITY_STEPS;
+
+  matrixProximity +=
+      (targetProximity -
+       matrixProximity) *
+      TOF_AMBIENT_PROXIMITY_SMOOTHING;
+
+  if (fabsf(
+          targetProximity -
+          matrixProximity) < 0.002f)
+  {
+    matrixProximity =
+        targetProximity;
+  }
+
+  uint32_t elapsed =
+      MATRIX_UPDATE_INTERVAL_MS;
+
+  if (lastMatrixAmbientUpdate != 0)
+  {
+    elapsed =
+        now -
+        lastMatrixAmbientUpdate;
+
+    if (elapsed > 250)
+    {
+      elapsed = 250;
+    }
+  }
+
+  lastMatrixAmbientUpdate = now;
+
+  const float speed =
+      1.0f +
+      matrixProximity *
+          TOF_AMBIENT_SPEED_BOOST;
+
+  matrixAmbientTime +=
+      elapsed / 1000.0f *
+      speed;
+}
+
+void renderMatrixAmbient(
+    uint16_t buffer[MATRIX_PIXELS],
+    uint32_t now)
+{
+  (void)now;
+
+  const float t =
+      matrixAmbientTime;
+
+  const float drift =
+      0.22f +
+      matrixProximity *
+          0.12f;
+
+  const float centerX =
+      3.5f +
+      drift *
+          sinf(
+              2.0f * PI * t / 8.7f);
+
+  const float centerY =
+      3.5f +
+      drift * 0.80f *
+          sinf(
+              2.0f * PI * t / 11.3f +
+              1.4f);
+
+  const float mainWave =
+      0.5f +
+      0.5f *
+          sinf(
+              2.0f * PI * t / 3.2f);
+
+  const float slowWave =
+      0.18f *
+      sinf(
+          2.0f * PI * t / 7.1f +
+          0.8f);
+
+  const float breathing =
+      clamp01(
+          mainWave +
+          slowWave);
+
+  const float ambientLevel =
+      MATRIX_AMBIENT_MIN_LEVEL +
+      (MATRIX_AMBIENT_MAX_LEVEL -
+       MATRIX_AMBIENT_MIN_LEVEL) *
+          breathing +
+      matrixProximity *
+          TOF_AMBIENT_BRIGHTNESS_BOOST;
+
+  const float falloff =
+      0.55f -
+      matrixProximity *
+          TOF_AMBIENT_SPREAD_BOOST;
+
+  for (uint8_t y = 0;
+       y < MATRIX_WIDTH;
+       ++y)
+  {
+    for (uint8_t x = 0;
+         x < MATRIX_WIDTH;
+         ++x)
+    {
+      const float radius =
+          matrixRadius(
+              x,
+              y,
+              centerX,
+              centerY);
+
+      const float glow =
+          1.0f /
+          (1.0f +
+           radius * radius *
+               falloff);
+
+      const float shimmer =
+          1.0f +
+          matrixProximity *
+              TOF_AMBIENT_SHIMMER_MAX *
+              sinf(
+                  radius * 2.4f -
+                  2.0f * PI * t /
+                      2.8f);
+
+      buffer[
+          y * MATRIX_WIDTH +
+          x] =
+          matrixColor(
+              MATRIX_R,
+              MATRIX_G,
+              MATRIX_B,
+              ambientLevel *
+                  glow *
+                  shimmer);
+    }
+  }
+}
+
+void renderMatrixRing(
+    uint16_t buffer[MATRIX_PIXELS],
+    float progress,
+    bool expanding,
+    uint8_t baseR,
+    uint8_t baseG,
+    uint8_t baseB,
+    float peakLevel)
+{
+  const float outerRadius =
+      5.0f;
+
+  const float targetRadius =
+      expanding
+          ? progress * outerRadius
+          : (1.0f - progress) *
+                outerRadius;
+
+  const float fade =
+      1.0f -
+      progress * 0.35f;
+
+  for (uint8_t y = 0;
+       y < MATRIX_WIDTH;
+       ++y)
+  {
+    for (uint8_t x = 0;
+         x < MATRIX_WIDTH;
+         ++x)
+    {
+      const float radius =
+          matrixRadius(
+              x,
+              y,
+              3.5f,
+              3.5f);
+
+      const float distanceFromRing =
+          fabsf(
+              radius -
+              targetRadius);
+
+      float intensity =
+          1.0f -
+          distanceFromRing /
+              1.15f;
+
+      intensity =
+          clamp01(intensity) *
+          peakLevel *
+          fade;
+
+      buffer[
+          y * MATRIX_WIDTH +
+          x] =
+          matrixColor(
+              baseR,
+              baseG,
+              baseB,
+              intensity);
+    }
+  }
+}
+
+void renderMatrixPulse(
+    uint16_t buffer[MATRIX_PIXELS],
+    float progress)
+{
+  const float pulse =
+      0.20f +
+      0.80f *
+          sinf(
+              PI * progress);
+
+  for (uint8_t y = 0;
+       y < MATRIX_WIDTH;
+       ++y)
+  {
+    for (uint8_t x = 0;
+         x < MATRIX_WIDTH;
+         ++x)
+    {
+      const float radius =
+          matrixRadius(
+              x,
+              y,
+              3.5f,
+              3.5f);
+
+      const float glow =
+          1.0f /
+          (1.0f +
+           radius * radius * 0.28f);
+
+      buffer[
+          y * MATRIX_WIDTH +
+          x] =
+          matrixColor(
+              MUTE_R,
+              MUTE_G,
+              MUTE_B,
+              MATRIX_ACTION_PEAK_LEVEL *
+                  pulse *
+                  glow);
+    }
+  }
+}
+
+void renderMatrixScroll(
+    uint16_t buffer[MATRIX_PIXELS],
+    float progress,
+    bool upward)
+{
+  const float bandY =
+      upward
+          ? 7.5f -
+                progress * 8.0f
+          : -0.5f +
+                progress * 8.0f;
+
+  for (uint8_t y = 0;
+       y < MATRIX_WIDTH;
+       ++y)
+  {
+    const float verticalDistance =
+        fabsf(
+            (float)y -
+            bandY);
+
+    const float verticalLevel =
+        clamp01(
+            1.0f -
+            verticalDistance /
+                1.8f);
+
+    for (uint8_t x = 0;
+         x < MATRIX_WIDTH;
+         ++x)
+    {
+      const float horizontalDistance =
+          fabsf(
+              (float)x -
+              3.5f) /
+          3.5f;
+
+      const float horizontalLevel =
+          1.0f -
+          0.35f *
+              horizontalDistance;
+
+      buffer[
+          y * MATRIX_WIDTH +
+          x] =
+          matrixColor(
+              ANGLE_R,
+              ANGLE_G,
+              ANGLE_B,
+              MATRIX_ACTION_LEVEL *
+                  verticalLevel *
+                  horizontalLevel);
+    }
+  }
+}
+
+void renderMatrixChord(
+    uint16_t buffer[MATRIX_PIXELS],
+    float progress)
+{
+  if (progress < 0.20f)
+  {
+    const float flashProgress =
+        progress /
+        0.20f;
+
+    const float level =
+        MATRIX_ACTION_PEAK_LEVEL *
+        (1.0f -
+         0.35f *
+             flashProgress);
+
+    const uint16_t color =
+        matrixColor(
+            MATRIX_WHITE_R,
+            MATRIX_WHITE_G,
+            MATRIX_WHITE_B,
+            level);
+
+    for (uint8_t i = 0;
+         i < MATRIX_PIXELS;
+         ++i)
+    {
+      buffer[i] =
+          color;
+    }
+
+    return;
+  }
+
+  renderMatrixRing(
+      buffer,
+      (progress - 0.20f) /
+          0.80f,
+      false,
+      MATRIX_WHITE_R,
+      MATRIX_WHITE_G,
+      MATRIX_WHITE_B,
+      MATRIX_ACTION_LEVEL);
+}
+
+void renderMatrixAnimation(
+    uint16_t buffer[MATRIX_PIXELS],
+    uint32_t now)
+{
+  if (matrixAnimation ==
+          MatrixAnimation::IDLE ||
+      matrixAnimationDuration == 0)
+  {
+    renderMatrixAmbient(
+        buffer,
+        now);
+
+    return;
+  }
+
+  const uint32_t elapsed =
+      now -
+      matrixAnimationStarted;
+
+  if (elapsed >=
+      matrixAnimationDuration)
+  {
+    matrixAnimation =
+        MatrixAnimation::IDLE;
+
+    matrixAnimationDuration = 0;
+
+    renderMatrixAmbient(
+        buffer,
+        now);
+
+    return;
+  }
+
+  const float progress =
+      (float)elapsed /
+      (float)matrixAnimationDuration;
+
+  switch (matrixAnimation)
+  {
+    case MatrixAnimation::ORA4_RIPPLE:
+      renderMatrixRing(
+          buffer,
+          progress,
+          true,
+          ORA4_R,
+          ORA4_G,
+          ORA4_B,
+          MATRIX_ACTION_LEVEL);
+      break;
+
+    case MatrixAnimation::STUDIO_RIPPLE:
+      renderMatrixRing(
+          buffer,
+          progress,
+          true,
+          STUDIO_R,
+          STUDIO_G,
+          STUDIO_B,
+          MATRIX_ACTION_LEVEL);
+      break;
+
+    case MatrixAnimation::CHORD_FLASH:
+      renderMatrixChord(
+          buffer,
+          progress);
+      break;
+
+    case MatrixAnimation::VOLUME_EXPAND:
+      renderMatrixRing(
+          buffer,
+          progress,
+          true,
+          MUTE_R,
+          MUTE_G,
+          MUTE_B,
+          MATRIX_ACTION_LEVEL);
+      break;
+
+    case MatrixAnimation::VOLUME_CONTRACT:
+      renderMatrixRing(
+          buffer,
+          progress,
+          false,
+          MUTE_R,
+          MUTE_G,
+          MUTE_B,
+          MATRIX_ACTION_LEVEL);
+      break;
+
+    case MatrixAnimation::MUTE_PULSE:
+      renderMatrixPulse(
+          buffer,
+          progress);
+      break;
+
+    case MatrixAnimation::SCROLL_UP:
+      renderMatrixScroll(
+          buffer,
+          progress,
+          true);
+      break;
+
+    case MatrixAnimation::SCROLL_DOWN:
+      renderMatrixScroll(
+          buffer,
+          progress,
+          false);
+      break;
+
+    case MatrixAnimation::IDLE:
+    default:
+      renderMatrixAmbient(
+          buffer,
+          now);
+      break;
+  }
+}
 
 void updateMatrix()
 {
@@ -1651,90 +2368,14 @@ void updateMatrix()
   lastMatrixUpdate =
       now;
 
+  updateMatrixAmbientState(
+      now);
+
   uint16_t buffer[MATRIX_PIXELS] = {0};
 
-  if (tofDistanceValid &&
-      tofDistance <
-          TOF_FAR_MM)
-  {
-    uint16_t distance =
-        tofDistance;
-
-    if (distance <
-        TOF_NEAR_MM)
-    {
-      distance =
-          TOF_NEAR_MM;
-    }
-
-    const float proximity =
-        (float)(
-            TOF_FAR_MM -
-            distance) /
-        (float)(
-            TOF_FAR_MM -
-            TOF_NEAR_MM);
-
-    uint8_t squareSize =
-        (uint8_t)(
-            2.0f +
-            proximity *
-                6.0f +
-            0.5f);
-
-    if (squareSize < 2)
-      squareSize = 2;
-
-    if (squareSize > 8)
-      squareSize = 8;
-
-    const float level =
-        0.10f +
-        proximity *
-            0.90f;
-
-    uint8_t r;
-    uint8_t g;
-    uint8_t b;
-
-    scaleRgb(
-        MATRIX_R,
-        MATRIX_G,
-        MATRIX_B,
-        level,
-        r,
-        g,
-        b);
-
-    const uint16_t color =
-        rgb565(
-            r,
-            g,
-            b);
-
-    const uint8_t start =
-        (MATRIX_WIDTH -
-         squareSize) /
-        2;
-
-    for (uint8_t y = start;
-         y < start +
-                 squareSize;
-         ++y)
-    {
-      for (uint8_t x = start;
-           x < start +
-                   squareSize;
-           ++x)
-      {
-        buffer[
-            y *
-                MATRIX_WIDTH +
-            x] =
-            color;
-      }
-    }
-  }
+  renderMatrixAnimation(
+      buffer,
+      now);
 
   if (matrixInitialized &&
       memcmp(
@@ -1763,6 +2404,21 @@ void updateMatrix()
 
     matrixInitialized =
         true;
+  }
+  else
+  {
+    static uint32_t lastFailureLog = 0;
+
+    if (now - lastFailureLog >=
+        1000)
+    {
+      lastFailureLog = now;
+
+      Serial.printf(
+          "[Matrix] frame failed status=0x%02X op=%u\n",
+          (unsigned int)status,
+          op);
+    }
   }
 }
 
