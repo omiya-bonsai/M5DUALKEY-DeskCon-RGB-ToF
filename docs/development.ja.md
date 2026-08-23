@@ -22,7 +22,7 @@ English: [development.md](development.md)
 
 本プロジェクトでは、USB-Cポートが背面に来る向きを正面として扱います。この正面から見た物理チェーンは、左からDualKey、Encoder、Angle、Chain RGB、Chain ToFです。固定された右側接続では`RX=GPIO5`、`TX=GPIO6`、115200 baudを使用し、UART自動探索は行いません。DualKey本体の2個のWS2812BはAdafruit NeoPixelで制御し、信号はGPIO 21、電源イネーブルはGPIO 40です。物理的な左キーはpixel 0、右キーはpixel 1に対応します。EncoderとAngleのLEDは、デバイス探索で得たIDに対してM5Chain 1.0.8の`setRGBLight()`と`setRGBValue()`を使います。
 
-8 x 8 Matrixには独立した安全境界があります。`RGB_MATRIX_MAX_BRIGHTNESS`は50、`MATRIX_MASTER_BRIGHTNESS`は`static_assert`でこの上限以下に固定し、各frameのRGB値にも追加のlevel制限を適用します。Base ambient animationは5〜12%、proximity加算は最大8%と微細な揺らぎ、通常Action frameは約30%、50%のpixel levelは短いfeedbackだけで使用します。Matrixのhardware brightnessを50%より上へ設定する経路はありません。
+8 x 8 Matrixには独立した安全境界があります。`RGB_MATRIX_MAX_BRIGHTNESS`は85、`MATRIX_NORMAL_BRIGHTNESS`は50、`MATRIX_TOF_BOOST_BRIGHTNESS`は85とし、両方を`static_assert`で絶対上限以下に固定します。通常idleとすべての操作Actionはmaster brightness 50%を使用します。arm済みのToF proximity ambient期間だけ85%を選択でき、物体を置いたままでも15秒で終了して延長されません。各frameのRGB値には従来の追加level制限を維持します。
 
 ## Chain初期化と処理周期
 
@@ -48,10 +48,11 @@ ToFはv0.1.0の通信シーケンスを維持します。`SINGLE`、測定時間
 | `TOF_AMBIENT_BRIGHTNESS_BOOST` | 0.08 | ambient RGB levelの最大加算値 |
 | `TOF_AMBIENT_SPREAD_BOOST` | 0.35 | radial falloffの最大減少量 |
 | `TOF_AMBIENT_SHIMMER_MAX` | 0.12 | 微細なripple modulationの最大値 |
+| `TOF_BRIGHTNESS_BOOST_DURATION_MS` | 15000 ms | Matrix master brightness 85%の最大継続時間 |
 
 ## Matrix animation scheduling
 
-`MatrixAnimation`が保持するのは現在のanimation、開始時刻、継続時間だけです。DualKey、Encoder、Angleの新しいActionは古いanimationを置き換えます。`updateMatrix()`は`millis()`からframeを計算し、`delay()`を使用しません。赤／黄ripple、白flash-contraction、紫expansion／contraction／pulse、青の垂直移動を実装しています。Action描画はToF proximity ambientより優先されます。Action表示中もproximityは内部で追従し、終了後にambientの明るさ、呼吸速度、広がり、微細な揺らぎへ反映されます。
+`MatrixAnimation`が保持するのは現在のanimation、開始時刻、継続時間だけです。DualKey、Encoder、Angleの新しいActionは古いanimationを置き換えます。`updateMatrix()`は`millis()`からframeを計算し、`delay()`を使用しません。赤／黄ripple、白flash-contraction、紫expansion／contraction／pulse、青の垂直移動を実装しています。Action描画はToF proximity ambientより優先され、master brightnessを50%へ戻します。Action表示中もproximityは内部で追従し、終了時にToF boost枠が残っていればambientを85%へ戻します。輝度変更はAPI戻り値とoperation statusの両方が成功した場合だけcacheし、85%からの低下に失敗した場合は次のAction frameを抑止して85%で操作feedbackを表示しません。
 
 ## Angleのキャリブレーションとスクロール
 

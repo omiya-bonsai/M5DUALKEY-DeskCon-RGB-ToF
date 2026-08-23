@@ -124,16 +124,22 @@ constexpr uint8_t MATRIX_WHITE_B = 255;
 // M5Chain LED brightness uses 0-100.
 constexpr uint8_t CHAIN_LED_BRIGHTNESS = 100;
 
-// Chain RGB safety limit. The Matrix hardware/master brightness
-// must never exceed 50%. Per-frame RGB values apply a second,
-// lower brightness limit for idle and action rendering.
-constexpr uint8_t RGB_MATRIX_MAX_BRIGHTNESS = 50;
-constexpr uint8_t MATRIX_MASTER_BRIGHTNESS = 50;
+// Chain RGB safety limits. Normal idle and all control Action
+// feedback stay at 50%. Only an armed ToF proximity ambient
+// window may raise the hardware brightness to 85%.
+constexpr uint8_t RGB_MATRIX_MAX_BRIGHTNESS = 85;
+constexpr uint8_t MATRIX_NORMAL_BRIGHTNESS = 50;
+constexpr uint8_t MATRIX_TOF_BOOST_BRIGHTNESS = 85;
 
 static_assert(
-    MATRIX_MASTER_BRIGHTNESS <=
+    MATRIX_NORMAL_BRIGHTNESS <=
         RGB_MATRIX_MAX_BRIGHTNESS,
-    "Chain RGB brightness must not exceed 50%");
+    "Normal Matrix brightness exceeds the safety limit");
+
+static_assert(
+    MATRIX_TOF_BOOST_BRIGHTNESS <=
+        RGB_MATRIX_MAX_BRIGHTNESS,
+    "ToF Matrix brightness exceeds the safety limit");
 
 constexpr float STANDBY_LEVEL = 0.20f;
 
@@ -298,6 +304,12 @@ constexpr float TOF_AMBIENT_BRIGHTNESS_BOOST = 0.08f;
 constexpr float TOF_AMBIENT_SPREAD_BOOST = 0.35f;
 constexpr float TOF_AMBIENT_SHIMMER_MAX = 0.12f;
 
+constexpr uint32_t TOF_BRIGHTNESS_BOOST_DURATION_MS =
+    15000;
+
+constexpr uint32_t MATRIX_BRIGHTNESS_RETRY_INTERVAL_MS =
+    500;
+
 static_assert(
     MATRIX_ACTION_PEAK_LEVEL <= 0.50f,
     "Chain RGB pixel level must not exceed 50%");
@@ -344,6 +356,18 @@ float matrixProximity = 0.0f;
 float matrixAmbientTime = 0.0f;
 
 uint32_t lastMatrixAmbientUpdate = 0;
+
+bool tofBrightnessBoostActive = false;
+bool tofBrightnessBoostArmed = true;
+
+uint32_t tofBrightnessBoostStarted = 0;
+
+uint8_t matrixMasterBrightness = 0;
+bool matrixMasterBrightnessInitialized = false;
+
+bool matrixBrightnessRetryPending = false;
+uint8_t matrixBrightnessRetryTarget = 0;
+uint32_t lastMatrixBrightnessAttempt = 0;
 
 void startMatrixAnimation(
     MatrixAnimation animation,
@@ -794,13 +818,23 @@ void initChainLeds()
     status =
         M5Chain.setRGBBrightness(
             rgb_id,
-            MATRIX_MASTER_BRIGHTNESS,
+            MATRIX_NORMAL_BRIGHTNESS,
             &op);
 
     Serial.printf(
         "[Matrix] brightness status=0x%02X op=%u\n",
         (unsigned int)status,
         op);
+
+    if (status == CHAIN_OK &&
+        op)
+    {
+      matrixMasterBrightness =
+          MATRIX_NORMAL_BRIGHTNESS;
+
+      matrixMasterBrightnessInitialized =
+          true;
+    }
 
     op = 0;
 
@@ -1819,6 +1853,81 @@ void startMatrixAnimation(
   }
 }
 
+bool setMatrixMasterBrightness(
+    uint8_t brightness,
+    uint32_t now)
+{
+  if (matrixMasterBrightnessInitialized &&
+      matrixMasterBrightness ==
+          brightness)
+  {
+    matrixBrightnessRetryPending =
+        false;
+
+    return true;
+  }
+
+  if (matrixBrightnessRetryPending &&
+      matrixBrightnessRetryTarget ==
+          brightness &&
+      now - lastMatrixBrightnessAttempt <
+          MATRIX_BRIGHTNESS_RETRY_INTERVAL_MS)
+  {
+    return false;
+  }
+
+  lastMatrixBrightnessAttempt = now;
+
+  uint8_t op = 0;
+
+  const chain_status_t status =
+      M5Chain.setRGBBrightness(
+          rgb_id,
+          brightness,
+          &op);
+
+  if (status == CHAIN_OK &&
+      op)
+  {
+    matrixMasterBrightness =
+        brightness;
+
+    matrixMasterBrightnessInitialized =
+        true;
+
+    matrixBrightnessRetryPending =
+        false;
+
+    Serial.printf(
+        "[Matrix] brightness=%u\n",
+        brightness);
+
+    return true;
+  }
+
+  matrixBrightnessRetryPending =
+      true;
+
+  matrixBrightnessRetryTarget =
+      brightness;
+
+  static uint32_t lastFailureLog = 0;
+
+  if (now - lastFailureLog >=
+      1000)
+  {
+    lastFailureLog = now;
+
+    Serial.printf(
+        "[Matrix] brightness failed target=%u status=0x%02X op=%u\n",
+        brightness,
+        (unsigned int)status,
+        op);
+  }
+
+  return false;
+}
+
 uint16_t matrixColor(
     uint8_t baseR,
     uint8_t baseG,
@@ -1857,6 +1966,43 @@ void updateMatrixAmbientState(
     uint32_t now)
 {
   float targetProximity = 0.0f;
+
+  const bool tofNear =
+      tofDistanceValid &&
+      tofDistance <
+          TOF_AMBIENT_FAR_MM;
+
+  if (!tofNear)
+  {
+    tofBrightnessBoostActive =
+        false;
+
+    tofBrightnessBoostArmed =
+        true;
+  }
+  else
+  {
+    if (tofBrightnessBoostActive &&
+        now - tofBrightnessBoostStarted >=
+            TOF_BRIGHTNESS_BOOST_DURATION_MS)
+    {
+      tofBrightnessBoostActive =
+          false;
+    }
+
+    if (tofBrightnessBoostArmed &&
+        !tofBrightnessBoostActive)
+    {
+      tofBrightnessBoostActive =
+          true;
+
+      tofBrightnessBoostArmed =
+          false;
+
+      tofBrightnessBoostStarted =
+          now;
+    }
+  }
 
   if (tofDistanceValid)
   {
@@ -2370,6 +2516,50 @@ void updateMatrix()
 
   updateMatrixAmbientState(
       now);
+
+  const bool actionActive =
+      matrixAnimation !=
+          MatrixAnimation::IDLE &&
+      matrixAnimationDuration != 0 &&
+      now - matrixAnimationStarted <
+          matrixAnimationDuration;
+
+  const uint8_t targetBrightness =
+      !actionActive &&
+              tofBrightnessBoostActive
+          ? MATRIX_TOF_BOOST_BRIGHTNESS
+          : MATRIX_NORMAL_BRIGHTNESS;
+
+  const bool brightnessWasInitialized =
+      matrixMasterBrightnessInitialized;
+
+  const uint8_t previousBrightness =
+      matrixMasterBrightness;
+
+  const bool brightnessReady =
+      setMatrixMasterBrightness(
+          targetBrightness,
+          now);
+
+  // Never render a normal/Action frame while a failed
+  // transition could leave the Matrix above 50%.
+  if (!brightnessReady &&
+      (!matrixMasterBrightnessInitialized ||
+       matrixMasterBrightness >
+           targetBrightness))
+  {
+    return;
+  }
+
+  // Keep a brightness command and a full-frame transfer on
+  // separate 80 ms ticks to avoid a UART burst.
+  if (brightnessReady &&
+      (!brightnessWasInitialized ||
+       previousBrightness !=
+           targetBrightness))
+  {
+    return;
+  }
 
   uint16_t buffer[MATRIX_PIXELS] = {0};
 

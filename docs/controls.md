@@ -50,7 +50,7 @@ ToF is only a continuous parameter for the Matrix ambient light. It does not gen
 
 ## RGB Matrix
 
-The Matrix does not show distance as discrete steps. In ambient mode, ToF proximity gently increases brightness, breathing speed, glow spread, and a subtle shimmer. With invalid or far readings it returns to the quiet idle ambient. The latest control action temporarily replaces the ambient frame:
+The Matrix does not show distance as discrete steps. In ambient mode, ToF proximity gently increases brightness, breathing speed, glow spread, and a subtle shimmer. Entering the active range below 500 mm also raises the Matrix master brightness from 50% to 85% for at most 15 seconds. Leaving the range or losing valid distance returns it to 50% and rearms the boost. After the 15-second limit, keeping a hand in range does not extend or restart it; move out of range before approaching again. The latest control action temporarily replaces the ambient frame:
 
 | Action | Matrix feedback |
 | --- | --- |
@@ -63,7 +63,7 @@ The Matrix does not show distance as discrete steps. In ambient mode, ToF proxim
 | Scroll Up | Blue movement from bottom to top |
 | Scroll Down | Blue movement from top to bottom |
 
-Animations use `millis()` and never delay the main loop. Action feedback always has priority over proximity ambient; proximity continues to settle internally and becomes visible only after the action ends. Full-frame transfers are limited to one per 80 ms, unchanged frames are skipped, and the cache advances only after both the Chain API and operation status succeed. The Matrix hardware brightness is compile-time limited to 50%; the base ambient RGB level is 5-12%, proximity adds at most 8% plus subtle shimmer, and 50% pixel peaks are brief.
+Animations use `millis()` and never delay the main loop. Action feedback always has priority over proximity ambient; every DualKey, Encoder, and Angle action is rendered at the normal 50% master setting. Proximity continues to settle internally and becomes visible only after the action ends. If its 15-second window is still active, the ToF ambient then returns to 85%. Full-frame transfers are limited to one per 80 ms, unchanged frames are skipped, and brightness/frame caches advance only after both the Chain API and operation status succeed. Per-frame RGB levels retain their existing caps.
 
 ## LED Status
 

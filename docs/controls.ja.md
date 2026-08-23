@@ -50,7 +50,7 @@ ToFはMatrix ambient用の連続パラメーターとしてだけ使用します
 
 ## RGB Matrix
 
-Matrixは距離を段階表示しません。ambient時はToF proximityに応じて明るさ、呼吸速度、光の広がり、微細な揺らぎが穏やかに増えます。無効値または遠距離では静かなidle ambientへ戻ります。最新の操作Actionがambient frameを一時的に置き換えます。
+Matrixは距離を段階表示しません。ambient時はToF proximityに応じて明るさ、呼吸速度、光の広がり、微細な揺らぎが穏やかに増えます。500 mm未満の有効範囲へ入ると、Matrixのmaster brightnessも50%から85%へ最大15秒間だけ上がります。範囲外または距離無効になると50%へ戻って再armします。15秒経過後は手を範囲内へ置いたままでも延長・再開せず、いったん範囲外へ出してから再接近する必要があります。最新の操作Actionがambient frameを一時的に置き換えます。
 
 | Action | Matrix feedback |
 | --- | --- |
@@ -63,7 +63,7 @@ Matrixは距離を段階表示しません。ambient時はToF proximityに応じ
 | Scroll Up | 青、下から上への移動 |
 | Scroll Down | 青、上から下への移動 |
 
-animationは`millis()`ベースで、main loopをdelayしません。操作feedbackは常にproximity ambientより優先されます。Action中もproximity値は内部で追従し、Action終了後にだけ表示へ反映されます。全frame転送は最短80 ms、同一frameは送信せず、Chain APIとoperation statusがともに成功した場合だけcacheを更新します。Matrixのhardware brightnessはコンパイル時に50%以下へ制限し、base ambient RGB levelは5〜12%、proximityによる加算は最大8%と微細な揺らぎに留め、50%のpixel peakは短時間だけ使用します。
+animationは`millis()`ベースで、main loopをdelayしません。操作feedbackは常にproximity ambientより優先され、DualKey、Encoder、AngleのすべてのActionを通常のmaster brightness 50%で描画します。Action中もproximity値は内部で追従し、15秒枠が残っていればAction終了後のToF ambientで85%へ復帰します。全frame転送は最短80 ms、同一frameは送信せず、Chain APIとoperation statusがともに成功した場合だけ輝度・frame cacheを更新します。frameごとのRGB level制限は従来どおりです。
 
 ## LED状態表示
 

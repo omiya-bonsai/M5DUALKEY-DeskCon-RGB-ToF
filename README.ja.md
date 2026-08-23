@@ -22,7 +22,7 @@ M5DUALKEY-DeskCon-RGB-ToFは、M5Stack Chain DualKey、Encoder、Angle、RGB、T
 - ハードウェアによる音量・ミュート操作
 - 起動時キャリブレーションとヒステリシスを備えたオートスクロール
 - オーディオ出力とミュートを示す控えめなRGB状態表示
-- ToFの連続距離で低輝度ambientを穏やかに変化させ、ToFからはHIDを送信しない設計
+- ToFの連続距離でambientを穏やかに変化させ、最大15秒の85%輝度boostを行い、ToFからはHIDを送信しない設計
 - 低輝度の8 x 8 ambient animationと操作別RGB feedback
 - 4台のChainモジュールの自動探索と構成検証
 
@@ -70,7 +70,7 @@ LEDはmacOSから取得した実状態ではなく、ファームウェア内の
 
 ## Project Status
 
-USB HID Keyboard、Consumer Control、Angleオートスクロール、起動時キャリブレーション、ToF SINGLEによる連続proximity入力、RGB状態表示、non-blocking Matrix animationを実装済みです。Matrixのmaster brightnessは50%を絶対上限とし、全buffer転送は最大12.5 fpsに制限しています。BLE HIDは今後実装予定です。
+USB HID Keyboard、Consumer Control、Angleオートスクロール、起動時キャリブレーション、ToF SINGLEによる連続proximity入力、RGB状態表示、non-blocking Matrix animationを実装済みです。Matrixのmaster brightnessはidleと操作Actionでは50%を維持し、arm済みのToF proximity ambient期間だけ最大15秒間85%へ上げます。全buffer転送は最大12.5 fpsに制限しています。BLE HIDは今後実装予定です。
 
 ## ライセンス
 

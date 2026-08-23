@@ -64,7 +64,7 @@ ToF proximity ambient -------------------------------------+          |
 
 ToFは実機確認済みの33 ms SINGLEシーケンスを維持し、完了した距離を読むたびに次の測距を明示的にSTARTします。有効距離は75/25で平滑化し、500 msで失効して、ambient描画用の範囲内proximity値へ変換します。Keyboard、Consumer Control、Mouseは呼び出しません。ToF本体のLEDは起動演出へ参加しません。
 
-Matrixは絶対距離を段階表示しません。無操作時は中央付近の淡い光を表示し、明るさ、呼吸速度、広がり、微細な揺らぎをproximityに応じて変化させます。DualKey、Encoder、Angleの入力Actionが発生すると、最新操作がambient frameを一時的に置き換え、ripple、contraction、expansion、pulse、方向移動を表示します。描画は`millis()`ベースで、入力、HID、ToF処理をブロックしません。
+Matrixは絶対距離を段階表示しません。無操作時は中央付近の光を表示し、明るさ、呼吸速度、広がり、微細な揺らぎをproximityに応じて変化させます。ToF有効範囲へ入ると、arm済みのmaster brightness 85%枠を1回開始し、最大15秒で終了します。DualKey、Encoder、Angleの入力Actionが発生するとmaster brightnessを50%へ戻し、最新操作がambient frameを一時的に置き換えてripple、contraction、expansion、pulse、方向移動を表示します。描画は`millis()`ベースで、入力、HID、ToF処理をブロックしません。
 
 ## 責務分離
 
@@ -81,4 +81,4 @@ Matrixは絶対距離を段階表示しません。無操作時は中央付近�
 
 LEDの固定対応は、DualKey左 = ORA4のBright Red、DualKey右 = Studio DisplayのBright Yellow、Encoder = MuteのBright Purple、Angle = スクロール操作量を示すBright Blueです。選択中の出力表示とミュート表示は1/f風に呼吸し、Angle LEDは正規化した操作量に応じて輝度が変化して停止後にstandbyへ戻ります。
 
-LED状態はM5Stack側で管理します。macOSから状態を取得する経路はないため、OSの確定的な実状態ではありません。macOS、別のキーボード、別アプリから出力先やミュートを変更すると、LED表示と実状態がずれることがあります。Matrixのmaster brightnessはコンパイル時に50%を上限とし、base ambient frameは5〜12%のRGB level、proximity加算は最大8%と微細な揺らぎ、feedbackは短時間に制限します。状態保持とLED更新を入力処理から分離しているため、将来BLE状態やホストからのフィードバックを追加できます。
+LED状態はM5Stack側で管理します。macOSから状態を取得する経路はないため、OSの確定的な実状態ではありません。macOS、別のキーボード、別アプリから出力先やミュートを変更すると、LED表示と実状態がずれることがあります。Matrixのmaster brightnessは通常50%とし、ToF proximity ambientだけがコンパイル時上限85%をarmごとに最大15秒使用できます。frameごとのRGB levelは別途制限します。状態保持とLED更新を入力処理から分離しているため、将来BLE状態やホストからのフィードバックを追加できます。

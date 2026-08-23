@@ -22,7 +22,7 @@ It sends standard keyboard, consumer-control, and mouse-wheel events. DualKey au
 - Hardware volume and mute control
 - Spring-centered auto-scroll with startup calibration and hysteresis
 - Low-brightness RGB status indicators for audio output and mute
-- Continuously measured ToF proximity shaping the low-brightness ambient light, with no ToF HID output
+- Continuously measured ToF proximity shaping the ambient light, with a time-limited 85% brightness boost and no ToF HID output
 - Low-brightness 8 x 8 ambient animation and action-specific RGB feedback
 - Automatic discovery and validation of the four Chain modules
 
@@ -70,7 +70,7 @@ The LEDs represent firmware-maintained state, not state read back from macOS. Se
 
 ## Project Status
 
-USB HID keyboard, consumer control, Angle auto-scroll, startup calibration, continuous ToF SINGLE proximity input, RGB status indicators, and non-blocking Matrix animations are implemented. Matrix master brightness is hard-limited to 50%, and full-buffer transfers are limited to 12.5 fps. BLE HID is planned.
+USB HID keyboard, consumer control, Angle auto-scroll, startup calibration, continuous ToF SINGLE proximity input, RGB status indicators, and non-blocking Matrix animations are implemented. Matrix master brightness stays at 50% for idle and control actions; only an armed ToF proximity ambient window can raise it to 85% for at most 15 seconds. Full-buffer transfers are limited to 12.5 fps. BLE HID is planned.
 
 ## License
 

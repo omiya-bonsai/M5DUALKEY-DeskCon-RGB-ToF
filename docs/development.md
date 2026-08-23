@@ -22,7 +22,7 @@ Board menus vary with the M5Stack package version. Confirm that TinyUSB is selec
 
 The orientation with the USB-C port on the rear side is treated as the front. From this front view, the physical chain is DualKey, Encoder, Angle, Chain RGB, then Chain ToF from left to right. This fixed right-side connection uses `RX=GPIO5`, `TX=GPIO6`, and 115200 baud; UART auto-detection is not used. The DualKey contains two WS2812B LEDs controlled with Adafruit NeoPixel on GPIO 21; GPIO 40 enables their power. The physical left key is pixel 0 and the right key is pixel 1. Encoder and Angle LEDs use M5Chain 1.0.8 `setRGBLight()` and `setRGBValue()` with IDs found by device discovery.
 
-The 8 x 8 Matrix has a separate safety boundary. `RGB_MATRIX_MAX_BRIGHTNESS` is 50, `MATRIX_MASTER_BRIGHTNESS` is checked against it with `static_assert`, and every rendered RGB value has an additional level cap. Base ambient animation uses 5-12% RGB levels; proximity adds at most 8% plus subtle shimmer. Normal action frames use about 30%, and only short feedback may reach a 50% pixel level. No runtime path sets Matrix hardware brightness above 50%.
+The 8 x 8 Matrix has a separate safety boundary. `RGB_MATRIX_MAX_BRIGHTNESS` is 85. `MATRIX_NORMAL_BRIGHTNESS` is 50 and `MATRIX_TOF_BOOST_BRIGHTNESS` is 85; both are checked against the absolute limit with `static_assert`. Normal idle and all control Action frames use the 50% master setting. Only an armed ToF proximity ambient window may select 85%, and the window expires after 15 seconds without being extended by a continuously present object. Every rendered RGB value retains its additional per-frame level cap.
 
 ## Chain Initialization and Scheduling
 
@@ -48,10 +48,11 @@ Important tuning constants:
 | `TOF_AMBIENT_BRIGHTNESS_BOOST` | 0.08 | Maximum ambient RGB-level increase |
 | `TOF_AMBIENT_SPREAD_BOOST` | 0.35 | Maximum radial falloff reduction |
 | `TOF_AMBIENT_SHIMMER_MAX` | 0.12 | Maximum subtle ripple modulation |
+| `TOF_BRIGHTNESS_BOOST_DURATION_MS` | 15000 ms | Maximum duration of the 85% Matrix master setting |
 
 ## Matrix Animation Scheduling
 
-`MatrixAnimation` stores only the current animation, start time, and duration. A new DualKey, Encoder, or Angle action replaces the old animation. `updateMatrix()` computes a frame from `millis()` and never calls `delay()`. Available effects are red/yellow ripples, white flash-contraction, purple expansion/contraction/pulse, and blue vertical movement. Action rendering has priority over ToF proximity ambient. Proximity continues to settle while an action is visible, then drives the ambient brightness, breathing speed, spread, and subtle shimmer after the action ends.
+`MatrixAnimation` stores only the current animation, start time, and duration. A new DualKey, Encoder, or Angle action replaces the old animation. `updateMatrix()` computes a frame from `millis()` and never calls `delay()`. Available effects are red/yellow ripples, white flash-contraction, purple expansion/contraction/pulse, and blue vertical movement. Action rendering has priority over ToF proximity ambient and forces the master setting to 50%. Proximity continues to settle while an action is visible. If the ToF boost window remains active when the action ends, ambient rendering returns to 85%. Brightness changes are cached only after both the API return and operation status succeed; failed reductions suppress the next Action frame so it cannot be rendered at 85%.
 
 ## Angle Calibration and Scrolling
 
